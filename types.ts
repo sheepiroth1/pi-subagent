@@ -43,6 +43,10 @@ export interface SingleResult {
 	maxTurnsBudget?: number;
 	compactionStarted?: number;
 	compactionCompleted?: number;
+	/** Archived sub-agent session file path (set when the run was archived). */
+	sessionFile?: string;
+	/** Sub-agent cwd from the temp session header (for the parent link entry). */
+	childCwd?: string;
 }
 
 /** Metadata attached to every tool result for rendering. */

@@ -8,5 +8,5 @@
 		"moduleResolution": "nodenext",
 		"skipLibCheck": true
 	},
-	"include": ["index.ts", "runner.ts", "render.ts", "types.ts"]
+	"include": ["index.ts", "merge.ts", "runner.ts", "render.ts", "types.ts"]
 }

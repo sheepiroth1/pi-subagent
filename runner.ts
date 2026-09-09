@@ -16,6 +16,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
+import { archiveSubagentSession } from "./merge.js";
 import { parseInheritedCliArgs } from "./runner-cli.js";
 import { processPiJsonLine } from "./runner-events.js";
 import {
@@ -133,6 +134,12 @@ export interface RunAgentOptions {
   taskCwd?: string;
   /** Serialized parent session snapshot (full conversation in JSONL). */
   forkSessionSnapshotJsonl?: string;
+  /** Parent session file path (undefined for ephemeral sessions). */
+  parentSessionFile?: string;
+  /** Parent process cwd; the archive lands in this cwd's session dir. */
+  parentCwd: string;
+  /** Ids of the snapshot entries, in order (archive split point). */
+  snapshotEntryIds: string[];
   /** Abort signal for cancellation. */
   signal?: AbortSignal;
   /** Streaming update callback. */
@@ -164,6 +171,9 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
     task,
     taskCwd,
     forkSessionSnapshotJsonl,
+    parentSessionFile,
+    parentCwd,
+    snapshotEntryIds,
     signal,
     onUpdate,
     makeDetails,
@@ -459,6 +469,24 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
 
     return normalizeCompletedResult(result, wasAborted);
   } finally {
+    // Archive the sub-agent's new entries into the user's session store.
+    // Must never fail the tool call; fall back to plain cleanup on error.
+    try {
+      if (forkSessionTmpPath) {
+        const archived = archiveSubagentSession({
+          tmpPath: forkSessionTmpPath,
+          parentSessionFile,
+          parentCwd,
+          snapshotEntryIds,
+        });
+        if (archived) {
+          result.sessionFile = archived.sessionFile;
+          result.childCwd = archived.childCwd;
+        }
+      }
+    } catch (err) {
+      console.error(`[pi-subagent] session archive failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
     cleanupTempDir(forkSessionTmpDir);
   }
 }

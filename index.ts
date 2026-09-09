@@ -105,16 +105,31 @@ interface SessionSnapshotSource {
 	getBranch: () => unknown[];
 }
 
-function buildForkSessionSnapshotJsonl(
+interface SessionSnapshot {
+	jsonl: string;
+	entryIds: string[];
+}
+
+function buildForkSessionSnapshot(
 	sessionManager: SessionSnapshotSource,
-): string | null {
+): SessionSnapshot | null {
 	const header = sessionManager.getHeader();
 	if (!header || typeof header !== "object") return null;
 
 	const branchEntries = sessionManager.getBranch();
 	const lines = [JSON.stringify(header)];
-	for (const entry of branchEntries) lines.push(JSON.stringify(entry));
-	return `${lines.join("\n")}\n`;
+	const entryIds: string[] = [];
+	for (const entry of branchEntries) {
+		lines.push(JSON.stringify(entry));
+		if (
+			entry &&
+			typeof entry === "object" &&
+			typeof (entry as { id?: unknown }).id === "string"
+		) {
+			entryIds.push((entry as { id: string }).id);
+		}
+	}
+	return { jsonl: `${lines.join("\n")}\n`, entryIds };
 }
 
 // ---------------------------------------------------------------------------
@@ -147,11 +162,8 @@ export default function (pi: ExtensionAPI) {
 
 		async execute(_toolCallId, params, signal, onUpdate, ctx) {
 			// Build session snapshot for fork mode (full context inheritance)
-			let forkSessionSnapshotJsonl: string | undefined;
-			forkSessionSnapshotJsonl = buildForkSessionSnapshotJsonl(
-				ctx.sessionManager,
-			);
-			if (!forkSessionSnapshotJsonl) {
+			const snapshot = buildForkSessionSnapshot(ctx.sessionManager);
+			if (!snapshot) {
 				return {
 					content: [
 						{
@@ -198,13 +210,29 @@ export default function (pi: ExtensionAPI) {
 					agentName: params.name,
 					task: params.task,
 					taskCwd: cfg.cwd,
-					forkSessionSnapshotJsonl,
+					forkSessionSnapshotJsonl: snapshot.jsonl,
+					parentSessionFile: ctx.sessionManager.getSessionFile(),
+					parentCwd: ctx.cwd,
+					snapshotEntryIds: snapshot.entryIds,
 					signal,
 					onUpdate,
 					makeDetails: (results) => ({ results }),
 					timeout: cfg.timeoutMs,
 					maxTurns: cfg.maxTurns,
 				});
+
+				// Record the archived transcript in the parent session (safe
+				// single-writer path via the parent's own SessionManager).
+				if (result.sessionFile) {
+					pi.appendEntry("subagent_session", {
+						agent: result.agent,
+						task: result.task,
+						sessionFile: result.sessionFile,
+						exitCode: result.exitCode,
+						usage: result.usage,
+						cwd: result.childCwd,
+					});
+				}
 
 				if (isResultError(result)) {
 					return {

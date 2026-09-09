@@ -6,6 +6,7 @@
   "main": "index.ts",
   "files": [
     "index.ts",
+    "merge.ts",
     "runner.ts",
     "queue.ts",
     "runner-cli.js",
