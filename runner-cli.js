@@ -44,6 +44,7 @@ function resolvePathArg(value, options = {}) {
 export function parseInheritedCliArgs(argv) {
   const extensionArgs = [];
   const alwaysProxy = [];
+  let fallbackProvider;
   let fallbackModel;
   let fallbackThinking;
   let fallbackTools;
@@ -144,9 +145,17 @@ export function parseInheritedCliArgs(argv) {
       continue;
     }
 
+    // --provider/--model/--thinking travel together: the runner passes the
+    // parent's *current* selection explicitly and only falls back to these.
+    if (flagName === "--provider") {
+      const [value, skip] = getValue();
+      if (value !== undefined) fallbackProvider = value;
+      i += skip;
+      continue;
+    }
+
     if (
       [
-        "--provider",
         "--api-key",
         "--system-prompt",
         "--models",
@@ -219,6 +228,7 @@ export function parseInheritedCliArgs(argv) {
   return {
     extensionArgs,
     alwaysProxy,
+    fallbackProvider,
     fallbackModel,
     fallbackThinking,
     fallbackTools,

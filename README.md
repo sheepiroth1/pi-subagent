@@ -1,4 +1,71 @@
-# Pi SubAgent for LocalLLMs
+# Pi SubAgent for LocalLLMs — with context anchors
+
+Fork of [clanker-wanker/pi-subagent](https://github.com/clanker-wanker/pi-subagent) (itself forked from mjakl/pi-subagent), updated for the `@earendil-works/*` packages (tested on Pi 1.5.2, typed against 1.3.0). Ideas taken from [eelkeh/pi-subagent](https://github.com/eelkeh/pi-subagent): copy the session as raw entries, and never inherit an unfinished tool-call batch.
+
+## What this fork adds
+
+| Feature | Details |
+|---|---|
+| `inherit_context` on `subagent` | `"current"` (default; upstream behaviour), `"none"`, an anchor name, or **any entry id in the session tree** (other branches too). The child gets the path root → that entry. |
+| `context_anchor` tool | `save` (anchors the conversation as it was *before* this call), `list`, `delete`. Anchors are session labels `anchor:<name>`: they persist and show in `/tree`. |
+| Task delivered as a tool result | In the child, the task arrives as the result of a `subagent` tool call instead of a new user message (`PI_SUBAGENT_TASK_DELIVERY=tool`, default; `user` = upstream behaviour). See below. |
+| Same model as the parent | Children get the parent's *current* provider / model / thinking level (upstream forwarded `--provider` without `--model`, which Pi rejects, and ignored `/model` switches). |
+| `"none"` children archived | Upstream skipped archiving when the snapshot was empty. |
+
+### Anchor workflow
+
+```
+read spec.md, skills, ...                      ← shared material
+context_anchor({ action: "save", name: "spec" })
+subagent({ name: "a", task: "...", inherit_context: "spec" })
+subagent({ name: "b", task: "...", inherit_context: "spec" })   ← same prefix as "a"
+```
+
+Every child that inherits `spec` sends the same system prompt, tools and history, so the server can serve that prefix from its cache. The parent can keep working after the anchor; later children still start from the anchor.
+
+### What an anchor inherits
+
+An anchor is just a label (`anchor:<name>`) on one session entry. A child inheriting it gets the path **root → that entry**, as raw session entries — whatever happens to be on that path. The anchor lands at the state *before* the `context_anchor save` turn, i.e. exactly the prompt the server just cached.
+
+Example tree:
+
+```
+root
+ └─ u1  "read the spec and skills"
+    └─ a1  [read spec.json]
+       └─ r1  (spec contents)
+          └─ a2  [read skills/...]
+             └─ r2  (skills contents)
+                └─ a3  [context_anchor save "spec"]   ← executing turn
+```
+
+`anchorPointForSave` returns `r2` (the entry before the executing turn). Children with `inherit_context: "spec"` get `[u1, a1, r1, a2, r2]` — the **raw exploration**, including the full spec and skills dumps. If those are large, every child carries them.
+
+### Why the task is a tool result
+
+Qwen3-style chat templates render an assistant turn's reasoning only if the turn comes *after the last user message*. Pi sends past reasoning back (`reasoning_content`). Appending the task as a user message therefore re-renders every assistant turn since the last user message *without* its reasoning, and the prompt stops matching what the server cached, usually right before the documents you meant to share. Delivering the task as a tool result adds no user message, so the inherited history renders exactly as it did for the parent.
+
+Measured in `../e2e` (Pi 1.5.2, fake server, Qwen3-style rendering, 24 KB spec read after the user prompt):
+
+| Delivery | Anchored child 1 | Anchored child 2 | `current` child |
+|---|---|---|---|
+| `tool` (default) | 100 % of inherited history reusable | 100 % | 100 % |
+| `user` (upstream) | 0 % | 0 % from parent (93 % from child 1) | 0 % from parent (73 %) |
+
+The real template on your server decides the actual numbers; `../e2e/replay-live.mjs` replays the captured requests against a live server.
+
+**Live result (Strata, qwen3.8-flash-next-iq3_s, 2026-11-20):** this server keeps past reasoning, so both modes hit the anchor cache (8238 of ~8243 inherited tokens cached). Per anchored child: `tool` processed 121 new tokens, `user` processed 28. On a server like this, `PI_SUBAGENT_TASK_DELIVERY=user` is slightly cheaper. In both modes, the parent's next turn after an anchored child was only matched up to the anchor, so the parent re-processed everything after it (434–1358 tokens). Starting several anchored children in one parent turn keeps that to a single re-process.
+
+### Environment
+
+| Variable | Meaning | Default |
+|---|---|---|
+| `PI_SUBAGENT_TASK_DELIVERY` | `tool` or `user` | `tool` |
+| `PI_SUBAGENT_CHILD` | set to `1` by the runner in child processes | — |
+
+The rest of this README is upstream's and still applies.
+
+---
 
 Forked from https://github.com/mjakl/pi-subagent, shoutout for a clean, concise baseline to use.
 
