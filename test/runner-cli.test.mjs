@@ -37,8 +37,6 @@ test("forwards safe parent CLI flags and captures fallback model settings", () =
 
   assert.deepEqual(parsed.extensionArgs, []);
   assert.deepEqual(parsed.alwaysProxy, [
-    "--provider",
-    "openrouter",
     "--api-key",
     "secret",
     "--theme",
@@ -48,6 +46,7 @@ test("forwards safe parent CLI flags and captures fallback model settings", () =
     "--custom-flag",
     "value",
   ]);
+  assert.equal(parsed.fallbackProvider, "openrouter");
   assert.equal(parsed.fallbackModel, "anthropic/claude-3-7-sonnet");
   assert.equal(parsed.fallbackThinking, "high");
   assert.equal(parsed.fallbackTools, "read,bash");

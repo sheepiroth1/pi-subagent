@@ -1,11 +1,14 @@
 {
-  "name": "@mjakl/pi-subagent",
-  "version": "1.4.1",
-  "description": "Subagent extension for Pi coding agent. Delegate tasks to isolated processes with full context inheritance.",
+  "name": "pi-subagent-anchor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "KV-cache friendly sub-agents for Pi with selectable inherited context (anchors). Fork of clanker-wanker/pi-subagent.",
   "type": "module",
   "main": "index.ts",
   "files": [
     "index.ts",
+    "anchors.ts",
+    "delivery.ts",
     "merge.ts",
     "runner.ts",
     "queue.ts",
@@ -22,52 +25,34 @@
     ]
   },
   "scripts": {
-    "test": "node --test"
+    "test": "node --experimental-strip-types --no-warnings --test test/*.test.mjs",
+    "check": "tsc -p ."
   },
   "keywords": [
     "pi",
     "subagent",
     "delegation",
+    "kv-cache",
     "pi-package"
   ],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/BenjaminBilbro/pi-subagent.git"
-  },
-  "bugs": {
-    "url": "https://github.com/BenjaminBilbro/pi-subagent/issues"
-  },
-  "homepage": "https://github.com/mjakl/pi-subagent#readme",
-  "publishConfig": {
-    "access": "public"
+  "engines": {
+    "node": ">=22.19"
   },
   "license": "MIT",
   "devDependencies": {
-    "@types/node": "^25.2.3",
-    "typescript": "^5.9.3"
+    "@earendil-works/pi-agent-core": "1.3.0",
+    "@earendil-works/pi-ai": "1.3.0",
+    "@earendil-works/pi-coding-agent": "1.3.0",
+    "@earendil-works/pi-tui": "1.3.0",
+    "@types/node": "^24.0.0",
+    "typebox": "^1.0.0",
+    "typescript": "^5.9.0"
   },
   "peerDependencies": {
-    "@mariozechner/pi-agent-core": ">=0.37.0",
-    "@mariozechner/pi-ai": ">=0.37.0",
-    "@mariozechner/pi-coding-agent": ">=0.37.0",
-    "@mariozechner/pi-tui": ">=0.37.0",
-    "@sinclair/typebox": ">=0.34.0"
-  },
-  "peerDependenciesMeta": {
-    "@mariozechner/pi-agent-core": {
-      "optional": true
-    },
-    "@mariozechner/pi-coding-agent": {
-      "optional": true
-    },
-    "@mariozechner/pi-tui": {
-      "optional": true
-    },
-    "@mariozechner/pi-ai": {
-      "optional": true
-    },
-    "@sinclair/typebox": {
-      "optional": true
-    }
+    "@earendil-works/pi-agent-core": "*",
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
   }
 }

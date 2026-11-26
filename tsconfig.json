@@ -2,11 +2,13 @@
 	"compilerOptions": {
 		"strict": true,
 		"noEmit": true,
+		"allowJs": true,
+		"checkJs": false,
 		"allowImportingTsExtensions": true,
 		"target": "es2022",
 		"module": "nodenext",
 		"moduleResolution": "nodenext",
 		"skipLibCheck": true
 	},
-	"include": ["index.ts", "merge.ts", "runner.ts", "render.ts", "types.ts"]
+	"include": ["index.ts", "anchors.ts", "delivery.ts", "merge.ts", "runner.ts", "render.ts", "types.ts"]
 }

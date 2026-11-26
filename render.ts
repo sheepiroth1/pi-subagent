@@ -5,8 +5,8 @@
  */
 
 import * as os from "node:os";
-import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
-import { Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
+import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
+import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import { getResultSummaryText } from "./runner-events.js";
 import {
 	type DisplayItem,
@@ -156,6 +156,9 @@ export function renderCall(args: Record<string, any>, theme: { fg: ThemeFg; bold
 	let text =
 		theme.fg("toolTitle", theme.bold("subagent ")) +
 		theme.fg("accent", agentName);
+	if (args.inherit_context && args.inherit_context !== "current") {
+		text += theme.fg("dim", `  ⚓ ${args.inherit_context}`);
+	}
 	text += `\n  ${theme.fg("dim", preview)}`;
 	return new Text(text, 0, 0);
 }

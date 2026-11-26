@@ -127,16 +127,18 @@ export function archiveSubagentSession(input: ArchiveInput): ArchiveResult | nul
 	const { header, entries } = parsed;
 
 	// Split point: last entry whose id equals the last snapshot entry id.
+	// An empty snapshot (inherit_context "none") means every entry is new.
 	const lastSnapshotId = input.snapshotEntryIds[input.snapshotEntryIds.length - 1];
-	if (lastSnapshotId === undefined) return null;
 	let splitIndex = -1;
-	for (let i = entries.length - 1; i >= 0; i--) {
-		if (entries[i].id === lastSnapshotId) {
-			splitIndex = i;
-			break;
+	if (lastSnapshotId !== undefined) {
+		for (let i = entries.length - 1; i >= 0; i--) {
+			if (entries[i].id === lastSnapshotId) {
+				splitIndex = i;
+				break;
+			}
 		}
+		if (splitIndex === -1) return null;
 	}
-	if (splitIndex === -1) return null;
 
 	const newEntries = entries.slice(splitIndex + 1);
 	if (newEntries.length === 0) return null;

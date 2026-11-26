@@ -15,8 +15,9 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { AgentToolResult } from "@mariozechner/pi-agent-core";
-import { archiveSubagentSession } from "./merge.js";
+import type { AgentToolResult } from "@earendil-works/pi-agent-core";
+import { CHILD_ENV, DELIVERY_ENV, TASK_MARKER, resolveDelivery } from "./delivery.ts";
+import { archiveSubagentSession } from "./merge.ts";
 import { parseInheritedCliArgs } from "./runner-cli.js";
 import { processPiJsonLine } from "./runner-events.js";
 import {
@@ -86,10 +87,18 @@ function cleanupTempDir(dir: string | null): void {
 
 const inheritedCliArgs = parseInheritedCliArgs(process.argv);
 
+/** The parent's current model selection; a different model means no cache reuse. */
+export interface ModelSelection {
+  provider?: string;
+  model?: string;
+  thinking?: string;
+}
+
 function buildPiArgs(
   task: string,
   forkSessionPath: string | null,
   taskCwd: string | undefined,
+  selection: ModelSelection = {},
 ): string[] {
   const args: string[] = [
     "--mode",
@@ -98,6 +107,16 @@ function buildPiArgs(
     ...inheritedCliArgs.alwaysProxy,
     "-p",
   ];
+
+  // Same model + thinking level as the parent (current selection, which may
+  // differ from the CLI flags after /model). Upstream forwarded --provider
+  // without --model, which pi rejects.
+  const provider = selection.provider ?? inheritedCliArgs.fallbackProvider;
+  const model = selection.model ?? inheritedCliArgs.fallbackModel;
+  const thinking = selection.thinking ?? inheritedCliArgs.fallbackThinking;
+  if (provider && model) args.push("--provider", provider, "--model", model);
+  else if (model) args.push("--model", model);
+  if (thinking) args.push("--thinking", thinking);
 
   // Fork mode: use the parent's session snapshot (full conversation history)
   if (forkSessionPath) {
@@ -113,8 +132,11 @@ function buildPiArgs(
   // NO --append-system-prompt! The sub-agent inherits the main agent's
   // system prompt (Pi default + APPEND_SYSTEM.md) automatically.
 
-  // Task message with sub-agent marker
-  const taskMessage = `[sub-agent-task] Complete this task:\n${task}`;
+  // Task message with sub-agent marker. In the child, delivery.ts turns it
+  // into a `subagent` tool result (PI_SUBAGENT_TASK_DELIVERY=tool, default).
+  // Continuation / nudge prompts already carry their own marker and stay
+  // plain user messages.
+  const taskMessage = task.startsWith("[sub-agent-task]") ? task : `${TASK_MARKER}${task}`;
   args.push(taskMessage);
   return args;
 }
@@ -150,6 +172,8 @@ export interface RunAgentOptions {
   timeout?: number;
   /** Maximum number of assistant turns (LLM calls). Default: 50. */
   maxTurns?: number;
+  /** Parent's current provider / model / thinking level. */
+  selection?: ModelSelection;
 }
 
 /**
@@ -179,6 +203,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
     makeDetails,
     timeout = 120_000,
     maxTurns = 50,
+    selection,
   } = opts;
 
   if (!forkSessionSnapshotJsonl || !forkSessionSnapshotJsonl.trim()) {
@@ -212,7 +237,8 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
           text: getFinalOutput(result.messages) || "(running...)",
         },
       ],
-      details: makeDetails([result]),
+      // SingleResult is plain JSON data; the SDK's JsonValue type just can't see that.
+      details: makeDetails([result]) as unknown as AgentToolResult["details"],
     });
   };
 
@@ -251,7 +277,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
       }
 
       const attemptTimeoutMs = remainingMs;
-      const piArgs = buildPiArgs(attemptTask, forkSessionTmpPath, taskCwd);
+      const piArgs = buildPiArgs(attemptTask, forkSessionTmpPath, taskCwd, selection);
       let exceededMaxTurns = false;
       const attemptStartMsgCount = result.messages.length;
 
@@ -264,6 +290,8 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
           env: {
             ...process.env,
             [PI_OFFLINE_ENV]: "1",
+            [CHILD_ENV]: "1",
+            [DELIVERY_ENV]: resolveDelivery(process.env[DELIVERY_ENV]),
           },
         });
 

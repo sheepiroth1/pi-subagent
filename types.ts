@@ -8,7 +8,7 @@
 
 import * as os from "node:os";
 import * as path from "node:path";
-import type { Message } from "@mariozechner/pi-ai";
+import type { Message } from "@earendil-works/pi-ai";
 import { getFinalAssistantText } from "./runner-events.js";
 
 /** Aggregated token usage from a subagent run. */
@@ -28,6 +28,8 @@ export interface SingleResult {
 	agent: string;
 	/** Task description passed to the sub-agent. */
 	task: string;
+	/** What conversation the sub-agent inherited (inherit_context). */
+	inherited?: string;
 	exitCode: number;
 	messages: Message[];
 	stderr: string;
