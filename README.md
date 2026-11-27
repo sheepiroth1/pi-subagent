@@ -196,54 +196,16 @@ User: [sub-agent-task] Complete this task:
 
 ## System Prompt Requirements
 
-This extension auto-injects sub-agent instructions into the system prompt at runtime. The injected text is **constant** (never changes), so KV cache stability is preserved.
+This extension auto-injects sub-agent instructions into the system prompt at runtime. The injected text is **constant** (never changes), so KV cache stability is preserved. The same text is appended in both the main agent and the sub-agent — role-switching is handled by the `**[BEGIN SUB AGENT MODE]**` marker in the delivered task, not by a different system prompt.
 
-If you want to understand what gets injected, the extension adds these instructions:
+The injected block (`SUBAGENT_INSTRUCTIONS` in `index.ts`) covers, for both audiences:
 
-```markdown
-## Sub-Agent Tools/Extension
+- **Sub-agent mode**: how to recognize it (the `**[BEGIN SUB AGENT MODE]**` marker), that the final message becomes the tool result, that sub-agents cannot spawn sub-agents or ask the main agent questions, and that an ambiguous task should be handled by stating assumptions and proceeding.
+- **Launching a sub-agent**: the `subagent({ name, task, inherit_context?, timeout_seconds?, max_turns? })` parameters, the `inherit_context` options (`current` / `none` / anchor name / entry id), and the per-call budget overrides.
+- **Anchors**: the save/list/delete workflow and the cache-reuse caveat (keep the same model and tools between saving and reusing an anchor).
+- **What comes back**: final message on success; a bounded summary (reason, turn count, recent tool calls, partial output, stderr) on failure.
 
-Since we are running all our LLMs locally, we have to use a modified version of sub-agents. This means that you may switch between main agent and sub agent mode at any point during the session. 
-
-You will know sub-agent mode is active when you see a user message that follows this format:
-
-\`\`\`
-**[BEGIN SUB AGENT MODE]**: <prompt and task will go here>
-\`\`\`
-
-Once you see that then you will be operating in sub-agent mode, where you have an assigned task and should work to complete it. You will not be able to spawn any sub agents while operating in sub agent mode.
-Your primary goal is to accomplish the task and report back to the main agent.
-
-Another way to tell if you are in sub-agent mode is to look at the most recent tool call. You will see the sub-agent tool call followed by an empty tool result "No result provided". You ARE the tool result actively running in sub-agent mode.
-This means your final response will be the tool_result.
-
-### When to Use a Sub-Agent
-
-Use sub-agents when you need to:
-- Do heavy research across many files without polluting your context
-- Run long-running tasks that would consume your context window
-- Offload specialized work while you continue other tasks
-- Preserve context efficiency by keeping only summaries in your context
-
-A sub-agent will have FULL context for all tool calls/results and message history up until the point you spawn it, meaning it will know exactly what you know. Keep this in mind while defining a full task statement.
-
-### Calling the Subagent Tool
-
-\`\`\`
-subagent({
-  name: "researcher",     // Freeform name (human-like, for your reference)
-  task: "Research the latest about quantum computing"
-})
-\`\`\`
-
-
-### Best Practices
-
-1. Give sub-agents clear, specific task descriptions
-2. Long-running tasks: pass a higher `timeout_seconds` (or `max_turns`) on the call, or set `PI_SUBAGENT_TIMEOUT` / `PI_SUBAGENT_MAX_TURNS`
-3. Let sub-agents write results to files — you can read them back
-4. Use sub-agents to consolidate knowledge into summaries before bringing it back into your context
-```
+See `index.ts` for the exact, current text.
 
 ## Features
 

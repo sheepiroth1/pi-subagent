@@ -44,48 +44,21 @@ import { type SingleResult, isResultError, resolveSubagentConfig } from "./types
  * and child alike. Deterministic text → stable prefix.
  */
 const SUBAGENT_INSTRUCTIONS = `
-## Sub-Agent Tools/Extension
+## Sub-Agent Extension
 
-Sub-agents run on the same local model, with this same system prompt. You may therefore switch between main-agent and sub-agent mode within one conversation.
+Sub-agents run on same local model with same system prompt. Can switch between main-agent and sub-agent mode within one conversation.
+Use sub-agent to preserve context buffer and return only final result. Have sub-agent write findings to files for read back.
 
-You are in sub-agent mode when the most recent \`subagent\` tool call has a result that starts with:
+If most recent \`subagent\` tool result starts with \`[SUB AGENT MODE]\`, then you in sub-agent mode.
+If you sub-agent, you complete task in result and finish with final message. Your final message becomes tool result returned to main agent
+You cannot spawn sub-agents and cannot ask question.
+If tasks ambiguous, state assumptions, proceed, and note them in final message. 
+Ignore earlier identities, tasks and plans in history that not part of your task. 
 
-\`\`\`
-**[BEGIN SUB AGENT MODE]**
-\`\`\`
+Otherwise you are main agent
 
-Then you ARE that sub-agent: complete the task in that result and finish with a final message; that message is returned to the main agent as the tool's result. In sub-agent mode you cannot spawn sub-agents. Ignore earlier identities, tasks and plans in the history that are not part of your task.
+If you main agent, prefer reuse anchor for sub-agents as inference engine caching may be used
 
-### When to Use a Sub-Agent
-
-- Heavy research across many files without polluting your context
-- Long-running tasks that would consume your context window
-- Several independent tasks that need the same background material
-- Consolidating knowledge into a summary before it comes back to you
-
-### What a Sub-Agent Sees (inherit_context)
-
-- omitted / "current": the full conversation up to your \`subagent\` call. It knows exactly what you know.
-- "<anchor name>": the conversation up to an anchor saved with \`context_anchor\`. Every sub-agent started from the same anchor shares that exact history, so the inference cache is reused.
-- "none": no conversation history, only the system prompt and the task.
-- an entry id from the session tree: the conversation up to that entry.
-
-### Anchor Workflow
-
-1. Read the material every sub-agent needs (spec, docs, skills) into the conversation.
-2. \`context_anchor({ action: "save", name: "spec" })\` — the anchor is the conversation before this call.
-3. Start sub-agents with \`inherit_context: "spec"\` and a self-contained task. Anything after the anchor is not visible to them.
-
-\`\`\`
-subagent({ name: "researcher", task: "...", inherit_context: "spec" })
-\`\`\`
-
-### Best Practices
-
-1. Give sub-agents clear, specific task descriptions
-2. Long-running tasks: pass a higher \`timeout_seconds\` (or \`max_turns\`) on the call, or set PI_SUBAGENT_TIMEOUT / PI_SUBAGENT_MAX_TURNS
-3. Let sub-agents write results to files — you can read them back
-4. Use sub-agents to consolidate knowledge into summaries before bringing it back into your context
 `;
 
 // ---------------------------------------------------------------------------
@@ -94,7 +67,7 @@ subagent({ name: "researcher", task: "...", inherit_context: "spec" })
 
 const SubagentParams = Type.Object({
 	name: Type.String({
-		description: "A human-like name for the sub-agent (e.g., 'researcher', 'analyst', 'Ada'). Display only.",
+		description: "One-word role of sub-agent",
 	}),
 	task: Type.String({
 		description: "Self-contained task description.",
@@ -102,26 +75,26 @@ const SubagentParams = Type.Object({
 	inherit_context: Type.Optional(
 		Type.String({
 			description:
-				'What conversation the sub-agent inherits: "current" (default, everything so far), "none", an anchor name saved with context_anchor, or a session entry id. Reusing one anchor for many sub-agents reuses the inference cache.',
+				'Conversation for this sub-agent to inherit: "current" (default, everything so far), "none", an anchor name saved with context_anchor, or a session entry id. Prefer reuse anchor as inference engine may cache',
 		}),
 	),
 	timeout_seconds: Type.Optional(
 		Type.Number({
 			description:
-				"Max wall-clock time for this sub-agent, in seconds. Overrides PI_SUBAGENT_TIMEOUT for this call only. Default 1800 (30 min).",
+				"Max run time (seconds) for this sub-agent. Overrides PI_SUBAGENT_TIMEOUT for this call only. Default 1800 (30 min).",
 		}),
 	),
 	max_turns: Type.Optional(
 		Type.Number({
 			description:
-				"Max assistant turns (LLM calls) for this sub-agent. Overrides PI_SUBAGENT_MAX_TURNS for this call only. Default 100.",
+				"Max LLM calls for this sub-agent. Overrides PI_SUBAGENT_MAX_TURNS for this call only. Default 100.",
 		}),
 	),
 });
 
 const AnchorParams = Type.Object({
 	action: Type.Union([Type.Literal("save"), Type.Literal("list"), Type.Literal("delete")], {
-		description: "save: anchor the conversation as it was before this call. list: show anchors. delete: remove an anchor.",
+		description: "save: anchors the conversation as it was before this call. list: show anchors. delete: remove an anchor.",
 	}),
 	name: Type.Optional(
 		Type.String({ description: "Anchor name (letters, digits, . _ -). Required for save and delete." }),
@@ -175,7 +148,7 @@ export default function (pi: ExtensionAPI) {
 		description: [
 			"Save, list or delete named context anchors for sub-agents.",
 			"save: anchors the conversation as it was right before this call (everything read so far).",
-			'Sub-agents started with subagent({ inherit_context: "<name>" }) inherit exactly that conversation, so many sub-agents can share one cached prefix.',
+			'Sub-agents started with subagent({ inherit_context: "<name>" }) inherit exactly that conversation, so many sub-agents can share one stable prefix (which the inference engine may cache).',
 		].join("\n"),
 		parameters: AnchorParams,
 

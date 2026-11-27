@@ -62,7 +62,7 @@ function hash(text: string): string {
 
 export function taskResultText(task: string): string {
 	return (
-		"**[BEGIN SUB AGENT MODE]**\n" +
+		"[SUB AGENT MODE]\n" +
 		"You are now the sub-agent started by this call. Complete the task below; your final message is returned to the main agent as this tool's result.\n\n" +
 		`Task:\n${task}`
 	);
