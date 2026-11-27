@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   getFinalAssistantText,
+  getFailureSummary,
   getResultSummaryText,
   processPiEvent,
   processPiJsonLine,
@@ -177,4 +178,87 @@ test("does not mark final message that ended normally", () => {
     },
   ];
   assert.equal(getResultSummaryText(result), "Complete summary");
+});
+
+test("getFailureSummary reports reason, turns, recent tool calls and last output", () => {
+  const result = makeResult();
+  result.exitCode = 124;
+  result.stopReason = "timeout";
+  result.errorMessage = "Sub-agent timed out after 1800s";
+  result.usage.turns = 3;
+  result.messages = [
+    {
+      role: "assistant",
+      content: [
+        { type: "toolCall", id: "c1", name: "read", arguments: { file_path: "/a/spec.json" } },
+      ],
+    },
+    {
+      role: "assistant",
+      content: [
+        { type: "toolCall", id: "c2", name: "grep", arguments: { pattern: "TODO" } },
+        { type: "toolCall", id: "c3", name: "write", arguments: { file_path: "/a/out.md", content: "x".repeat(500) } },
+      ],
+    },
+    {
+      role: "assistant",
+      content: [{ type: "text", text: "Partial findings so far" }],
+    },
+  ];
+
+  const summary = getFailureSummary(result);
+  assert.ok(summary.startsWith("Sub-agent timed out after 1800s"), summary);
+  assert.ok(summary.includes("turns: 3"), summary);
+  assert.ok(summary.includes("read("), summary);
+  assert.ok(summary.includes("grep("), summary);
+  assert.ok(summary.includes("write("), summary);
+  // Large write payload is truncated, not dumped in full.
+  assert.ok(!summary.includes("x".repeat(500)), summary);
+  assert.ok(summary.includes("last output:\nPartial findings so far"), summary);
+});
+
+test("getFailureSummary omits recent activity and last output when absent", () => {
+  const result = makeResult();
+  result.exitCode = 1;
+  result.stopReason = "max_turns";
+  result.errorMessage = "Sub-agent exceeded maximum turns (100)";
+  result.usage.turns = 100;
+  const summary = getFailureSummary(result);
+  assert.equal(
+    summary,
+    "Sub-agent exceeded maximum turns (100)\n\nturns: 100",
+  );
+});
+
+test("getFailureSummary surfaces a state hint and stderr when the child produced no output", () => {
+  const result = makeResult();
+  result.exitCode = 124;
+  result.stopReason = "timeout";
+  result.errorMessage = "Sub-agent timed out after 1800s";
+  result.usage.turns = 0;
+  result.stderr = "model server: ECONNREFUSED 127.0.0.1:8080\nretrying...\nmodel server: ECONNREFUSED 127.0.0.1:8080";
+  const summary = getFailureSummary(result);
+  assert.ok(summary.startsWith("Sub-agent timed out after 1800s"), summary);
+  assert.ok(summary.includes("turns: 0"), summary);
+  assert.ok(summary.includes("no assistant output captured (child stalled before its first response)"), summary);
+  // Child stderr is surfaced (not overwritten by the timeout message).
+  assert.ok(summary.includes("ECONNREFUSED 127.0.0.1:8080"), summary);
+  assert.ok(summary.includes("stderr:"), summary);
+});
+
+test("getFailureSummary state hint without stderr when the child was silent", () => {
+  const result = makeResult();
+  result.exitCode = 124;
+  result.stopReason = "timeout";
+  result.errorMessage = "Sub-agent timed out after 1800s";
+  result.usage.turns = 0;
+  // normalizeCompletedResult would fill stderr with the timeout message when
+  // empty; simulate that here so the stderr block is correctly skipped as a
+  // duplicate of the reason.
+  result.stderr = "Sub-agent timed out after 1800s";
+  const summary = getFailureSummary(result);
+  assert.equal(
+    summary,
+    "Sub-agent timed out after 1800s\n\nturns: 0\n\nno assistant output captured (child stalled before its first response)",
+  );
 });

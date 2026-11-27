@@ -5,7 +5,7 @@ import path from "node:path";
 import { resolveSubagentConfig } from "../types.ts";
 
 const VARS = ["PI_SUBAGENT_TIMEOUT", "PI_SUBAGENT_MAX_TURNS", "PI_SUBAGENT_CWD"];
-const DEFAULTS = { timeoutMs: 600_000, maxTurns: 50, cwd: undefined };
+const DEFAULTS = { timeoutMs: 1_800_000, maxTurns: 100, cwd: undefined };
 
 function clearEnv() {
 	for (const v of VARS) delete process.env[v];

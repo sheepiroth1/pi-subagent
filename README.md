@@ -149,16 +149,20 @@ You can fork this repo and add in model selection as a parameter.
 |-----------|----------|---------|-------------|
 | `name` | Yes | — | Freeform human-like name (e.g., "researcher", "analyst"). Used for display only. |
 | `task` | Yes | — | Task description. The sub-agent receives the full session context. |
+| `inherit_context` | No | `"current"` | What the sub-agent inherits: `"current"`, `"none"`, an anchor name, or a session entry id. |
+| `timeout_seconds` | No | `1800` | Max wall-clock time for this sub-agent, in seconds. Overrides `PI_SUBAGENT_TIMEOUT` for this call. |
+| `max_turns` | No | `100` | Max assistant turns (LLM calls) for this sub-agent. Overrides `PI_SUBAGENT_MAX_TURNS` for this call. |
 
 ### Configuration
 
-Budgets and working directory are configured statically (not per call) via
-environment variables:
+Budgets can be set per call (`timeout_seconds`, `max_turns` on the tool) or
+globally via environment variables. Per-call values take precedence; invalid
+values (zero, negative) fall through to the env default.
 
 | Variable | Meaning | Default |
 |---|---|---|
-| `PI_SUBAGENT_TIMEOUT` | Max wall time per sub-agent, seconds | 600 |
-| `PI_SUBAGENT_MAX_TURNS` | Max assistant turns | 50 |
+| `PI_SUBAGENT_TIMEOUT` | Max wall time per sub-agent, seconds | 1800 |
+| `PI_SUBAGENT_MAX_TURNS` | Max assistant turns | 100 |
 | `PI_SUBAGENT_CWD` | Working directory for the child process (`~` expanded) | parent cwd |
 | `PI_SUBAGENT_MAX_CONCURRENT` | Max concurrent sub-agent processes; excess calls wait in a FIFO queue | unlimited |
 
@@ -183,11 +187,12 @@ User: [sub-agent-task] Complete this task:
 | Data | Main Agent Sees | TUI Shows |
 |------|-----------------|-----------|
 | Final text output | ✅ Yes | ✅ Yes |
-| Tool calls made by sub-agent | ❌ No | ✅ Yes (expanded view) |
+| Tool calls made by sub-agent | ❌ No (on success) | ✅ Yes (expanded view) |
 | Token usage / cost | ❌ No | ✅ Yes |
 | Error messages | ✅ Yes (on failure) | ✅ Yes |
+| Failure detail (reason, turn count, last ~8 tool calls, partial output, stderr) | ✅ Yes (on failure) | ✅ Yes |
 
-**Key point:** The main agent receives **only the final assistant text** from each sub-agent. Not the tool calls, not the reasoning, not the intermediate steps. This prevents context pollution while still giving you the results.
+**Key point:** On success the main agent receives **only the final assistant text** from each sub-agent — not the tool calls, not the reasoning, not the intermediate steps — to prevent context pollution. On failure (timeout, max-turns, error) it receives a bounded summary instead of a bare error: the stop reason, how many turns ran, the last few tool calls (args truncated), any partial final output, and — when the child produced no assistant output — its stderr and a state hint. The child's full history is never dumped into the parent; it lives in the archived child session file recorded as a `subagent_session` entry.
 
 ## System Prompt Requirements
 
@@ -235,7 +240,7 @@ subagent({
 ### Best Practices
 
 1. Give sub-agents clear, specific task descriptions
-2. Long-running tasks: raise PI_SUBAGENT_TIMEOUT before delegating
+2. Long-running tasks: pass a higher `timeout_seconds` (or `max_turns`) on the call, or set `PI_SUBAGENT_TIMEOUT` / `PI_SUBAGENT_MAX_TURNS`
 3. Let sub-agents write results to files — you can read them back
 4. Use sub-agents to consolidate knowledge into summaries before bringing it back into your context
 ```
@@ -245,7 +250,7 @@ subagent({
 - **Full Context Inheritance** — Sub-agents receive the complete session context via JSONL snapshot.
 - **Auto-Injection** — Sub-agent instructions are injected into the system prompt at startup (constant text, KV cache stable).
 - **Recursion Guard** — Sub-agents cannot spawn further sub-agents. Enforced at the runner level by blocking `subagent` tool calls.
-- **Timeout & Max Turns** — Configurable via PI_SUBAGENT_* env vars (defaults: 600 s, 50 turns).
+- **Timeout & Max Turns** — Configurable per call (`timeout_seconds`, `max_turns`) or via `PI_SUBAGENT_*` env vars (defaults: 1800 s, 100 turns).
 - **Streaming Updates** — Watch sub-agent progress in real-time as tool calls and outputs stream in.
 - **Rich TUI Rendering** — Collapsed/expanded views with usage stats and tool call previews.
 

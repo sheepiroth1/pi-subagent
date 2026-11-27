@@ -168,9 +168,9 @@ export interface RunAgentOptions {
   onUpdate?: OnUpdateCallback;
   /** Factory to wrap results into SubagentDetails. */
   makeDetails: (results: SingleResult[]) => { results: SingleResult[] };
-  /** Maximum execution time in milliseconds. Default: 120000 (120s). */
+  /** Maximum execution time in milliseconds. Default: 1800000 (30m). */
   timeout?: number;
-  /** Maximum number of assistant turns (LLM calls). Default: 50. */
+  /** Maximum number of assistant turns (LLM calls). Default: 100. */
   maxTurns?: number;
   /** Parent's current provider / model / thinking level. */
   selection?: ModelSelection;
@@ -201,8 +201,8 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
     signal,
     onUpdate,
     makeDetails,
-    timeout = 120_000,
-    maxTurns = 50,
+    timeout = 1_800_000,
+    maxTurns = 100,
     selection,
   } = opts;
 
@@ -409,7 +409,11 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
           result.exitCode = 124;
           result.stopReason = "timeout";
           result.errorMessage = `Sub-agent timed out after ${timeout / 1000}s`;
-          result.stderr = `Sub-agent timed out after ${timeout / 1000}s`;
+          // Preserve any stderr the child already produced (connection errors,
+          // compaction logs) — it is often the only signal when the child
+          // stalled without emitting assistant output. normalizeCompletedResult
+          // fills a fallback only when stderr is empty.
+          if (!result.stderr.trim()) result.stderr = `Sub-agent timed out after ${timeout / 1000}s`;
           terminateChild();
           setTimeout(() => {
             if (!settled) finish(124);

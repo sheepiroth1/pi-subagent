@@ -195,7 +195,7 @@ export interface SubagentConfig {
 	cwd: string | undefined; // undefined → parent cwd
 }
 
-const DEFAULTS = { timeoutSeconds: 600, maxTurns: 50 };
+const DEFAULTS = { timeoutSeconds: 1800, maxTurns: 100 };
 
 /** Expand a leading `~` to the user's home directory. */
 function expandHome(p: string): string {

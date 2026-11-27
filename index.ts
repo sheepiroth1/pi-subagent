@@ -30,7 +30,7 @@ import {
 } from "./anchors.ts";
 import { CHILD_ENV, DELIVERY_ENV, applyTaskDelivery, resolveDelivery } from "./delivery.ts";
 import { renderCall, renderResult } from "./render.ts";
-import { getResultSummaryText } from "./runner-events.js";
+import { getFailureSummary, getResultSummaryText } from "./runner-events.js";
 import { acquireSlot, releaseSlot } from "./queue.ts";
 import { runAgent } from "./runner.ts";
 import { type SingleResult, isResultError, resolveSubagentConfig } from "./types.ts";
@@ -83,7 +83,7 @@ subagent({ name: "researcher", task: "...", inherit_context: "spec" })
 ### Best Practices
 
 1. Give sub-agents clear, specific task descriptions
-2. Long-running tasks: raise PI_SUBAGENT_TIMEOUT before delegating
+2. Long-running tasks: pass a higher \`timeout_seconds\` (or \`max_turns\`) on the call, or set PI_SUBAGENT_TIMEOUT / PI_SUBAGENT_MAX_TURNS
 3. Let sub-agents write results to files — you can read them back
 4. Use sub-agents to consolidate knowledge into summaries before bringing it back into your context
 `;
@@ -103,6 +103,18 @@ const SubagentParams = Type.Object({
 		Type.String({
 			description:
 				'What conversation the sub-agent inherits: "current" (default, everything so far), "none", an anchor name saved with context_anchor, or a session entry id. Reusing one anchor for many sub-agents reuses the inference cache.',
+		}),
+	),
+	timeout_seconds: Type.Optional(
+		Type.Number({
+			description:
+				"Max wall-clock time for this sub-agent, in seconds. Overrides PI_SUBAGENT_TIMEOUT for this call only. Default 1800 (30 min).",
+		}),
+	),
+	max_turns: Type.Optional(
+		Type.Number({
+			description:
+				"Max assistant turns (LLM calls) for this sub-agent. Overrides PI_SUBAGENT_MAX_TURNS for this call only. Default 100.",
 		}),
 	),
 });
@@ -243,6 +255,14 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			const cfg = resolveSubagentConfig();
+			// Per-call overrides take precedence over the env-derived config.
+			// Invalid values (zero, negative, non-finite) fall through to cfg.
+			const callTimeout = Number.isFinite(params.timeout_seconds) && params.timeout_seconds! > 0
+				? Math.floor(params.timeout_seconds!) * 1000
+				: cfg.timeoutMs;
+			const callMaxTurns = Number.isFinite(params.max_turns) && params.max_turns! > 0
+				? Math.floor(params.max_turns!)
+				: cfg.maxTurns;
 
 			const outcome = await acquireSlot(signal);
 			if (outcome === "aborted") return errorResult("Sub-agent aborted while waiting in queue.");
@@ -266,8 +286,8 @@ export default function (pi: ExtensionAPI) {
 					signal,
 					onUpdate,
 					makeDetails: (results) => ({ results }),
-					timeout: cfg.timeoutMs,
-					maxTurns: cfg.maxTurns,
+					timeout: callTimeout,
+					maxTurns: callMaxTurns,
 					selection: {
 						provider: ctx.model?.provider,
 						model: ctx.model?.id,
@@ -289,7 +309,7 @@ export default function (pi: ExtensionAPI) {
 				}
 
 				if (isResultError(result)) {
-					return errorResult(`Sub-agent failed: ${getResultSummaryText(result)}`, [result]);
+					return errorResult(getFailureSummary(result), [result]);
 				}
 				return {
 					content: [{ type: "text" as const, text: getResultSummaryText(result) }],
